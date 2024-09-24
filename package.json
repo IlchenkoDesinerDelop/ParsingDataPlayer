@@ -1,0 +1,15 @@
+{
+  "name": "testtaskinnode",
+  "version": "1.0.0",
+  "description": "Шаг 1 Установка зависимости \r mkdir player-data-import\r cd player-data-import\r npm init -y\r Шаг 1.1 Установка всех нужных пакетов \r npm install pg csv-parser",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "pg": "^8.13.0"
+  }
+}

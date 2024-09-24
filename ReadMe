@@ -1,0 +1,287 @@
+Для создание функции по работе с csv file
+нужно выполить несколько шагов 
+Шаг 1 установка компанентов
+npm init -y  
+должны появится файлы указывающие на зависимости 
+для работы нам потребуется компоненты pg и parserpg ну и скорее всего fs установим и его
+npm install pg csv-parser fs
+- pg: для работы с PostgreSQL.
+- csv-parser: для парсинга CSV-файлов.
+- fs: встроенный модуль Node.js для работы с файловой системой.
+Шаг 2 подключение 
+вторым шагом мы подключаем следующие вещи 
+const { Client } = require('pg'); 
+// импорт компонента pg
+
+
+// Конфигурация подключения к базе данных
+const client = new Client({
+  host: 'localhost', // адресс хоста я делал 
+  user: 'postgres', //  имя пользователя
+  password: '1010', // пароль у меня простой
+  database: 'playerdatabase', // имя базу данных
+  port: 5432,
+});
+
+шаг 3 написание скриптов для работы с PostgreSQL
+// Функция для создания таблицы
+async function createTable() {
+  await client.connect();
+
+  const createTableQuery = `
+    CREATE TABLE IF NOT EXISTS players (
+      id SERIAL PRIMARY KEY,
+      nickname VARCHAR(255) NOT NULL,
+      email VARCHAR(255) NOT NULL,
+      registered INTEGER NOT NULL,
+      status VARCHAR(50) NOT NULL
+    );
+  `
+
+  try {
+    await client.query(createTableQuery);
+    console.log("Таблица 'players' успешно создана.");
+  } catch (error) {
+    console.error("Ошибка при создании таблицы:", error);
+  }
+}//
+//немного наверное не понятно сейчас я попробую обьяснить 
+1. async function createTable(): Это объявление асинхронной функции с именем createTable. 
+Асинхронные функции позволяют использовать await для работы с промисами, что упрощает код, который работает с асинхронными операциями.
+2. await client.connect();: Эта строка запускает подключение к базе данных PostgreSQL. 
+client — это объект, который используется для взаимодействия с базой данных. Мы ждём, 
+пока подключение будет установлено, прежде чем продолжить выполнение кода.
+3. const createTableQuery =: Здесь мы создаём переменную createTableQuery,
+ которая будет хранить строку SQL-запроса для создания таблицы.
+4 сам SQL запрос на создание таблиц если все таки она не существует с столбцами определенными
+5. try { ... } catch (error) { ... }: Это блоки для обработки ошибок. Мы пытаемся выполнить код внутри 
+try, и если произойдёт ошибка, мы поймаем её в блоке catch.
+
+6. await client.query(createTableQuery);: Здесь мы выполняем запрос к базе данных, используя ранее определённый 
+SQL-запрос createTableQuery. await означает, что мы ждём завершения выполнения этого запроса, прежде чем перейти к следующей строке.
+
+7. console.log("Таблица 'players' успешно создана.");: Если запрос выполнен успешно, мы выводим сообщение в консоль.
+
+8. catch (error) { ... }: Если произошла ошибка при выполнении запроса, мы вывополняем ее вывод в консоль чаще всего это ошибка
+ в синтаксисе и мы обязательно ее получаем 
+
+// Функция для импорта данных из CSV
+async function importDataFromCSV(filePath) {
+    const results = [];
+  
+    fs.createReadStream(filePath)
+      .pipe(csv({ separator: ';' })) // Указываем разделитель как ';'
+      .on('data', (data) => {
+        // Преобразуем дату в UNIX timestamp (INTEGER)
+        const registeredDate = data.registered.split('.').reverse().join('-'); // Преобразуем формат даты
+        const registeredTimestamp = Math.floor(new Date(registeredDate).getTime() / 1000); // Получаем UNIX timestamp
+        
+        results.push({
+          nickname: data.nickname,
+          email: data.email,
+          registered: registeredTimestamp,
+          status: data.status,
+        });
+      })
+      .on('end', async () => {
+        for (const player of results) {
+          // Проверяем, существует ли игрок с таким ником
+          const checkQuery = `SELECT * FROM players WHERE nickname = $1;`
+          
+          try {
+            const checkRes = await client.query(checkQuery, [player.nickname]);
+            if (checkRes.rows.length === 0) { // Если запись не найдена
+              const insertQuery = `
+                INSERT INTO players (nickname, email, registered, status) 
+                VALUES ($1, $2, $3, $4);`
+              await client.query(insertQuery, [player.nickname, player.email, player.registered, player.status]);
+              console.log('Запись для игрока `${player.nickname} добавлена.`');
+            } else {
+              console.log('Игрок `${player.nickname} уже существует. Пропуск.`');
+            }
+          } catch (error) {
+            console.error("Ошибка при добавлении данных:", error);
+          }
+        }
+        console.log("Импорт данных завершен.");
+        await selectPlayersWithStatusOn();
+        await client.end(); // Закрываем подключение
+      });
+  }
+  
+  //вновь есть сложность в понимании сейчас я попробую обьяснить
+
+1. Создание массива для хранения данных:
+   
+
+   const results = [];
+   
+   Здесь мы создаем пустой массив results, в который будем добавлять информацию о каждом игроке, извлеченную из CSV-файла.
+
+2. Чтение CSV-файла:
+   
+
+   fs.createReadStream(filePath)
+      .pipe(csv({ separator: ';' })) // Указываем разделитель как ';'
+   
+   Эта часть открывает CSV-файл по указанному пути (filePath) и считывает его данные. Мы используем pipe, чтобы передать данные в csv-parser, который будет разделять строки по символу ;.
+
+3. Обработка каждой строки данных:
+   
+
+   .on('data', (data) => {
+   
+   Этот обработчик срабатывает каждый раз, когда csv-parser находит новую строку в файле. Переменная data содержит данные из этой строки.
+
+4. Преобразование даты в UNIX timestamp:
+   
+
+   const registeredDate = data.registered.split('.').reverse().join('-'); // Преобразуем формат даты
+   const registeredTimestamp = Math.floor(new Date(registeredDate).getTime() / 1000); // Получаем UNIX timestamp
+   
+   - Мы берем дату регистрации (например, 12.12.2007), преобразуем её в формат, понятный JavaScript (например, 2007-12-12), 
+   используя split, reverse и join.
+   - Затем мы преобразуем дату в UNIX timestamp (количество секунд с 1 января 1970 года) с помощью new Date() и getTime().
+
+5. Сохранение данных в массив:
+   
+
+   results.push({
+      nickname: data.nickname,
+      email: data.email,
+      registered: registeredTimestamp,
+      status: data.status,
+   });
+   
+   Здесь мы добавляем объект с информацией о каждом игроке в массив results. Этот объект содержит:
+   - nickname: ник игрока.
+   - email: электронная почта игрока.
+   - registered: преобразованная дата регистрации в формате UNIX timestamp.
+   - status: статус игрока ("On" или "Off").
+
+6. Когда все данные прочитаны:
+   
+
+   .on('end', async () => {
+   
+   Этот обработчик срабатывает, когда все строки из CSV-файла были прочитаны.
+
+7. Проверка существования записи:
+   
+
+   const checkQuery = SELECT * FROM players WHERE nickname = $1;
+   
+   Мы создаем SQL-запрос для проверки, существует ли игрок с таким же ником в таблице players.
+   это создана с целью недопустить дублирования данных в таблице
+
+8. Добавление данных в базу:
+   
+   try {
+      const checkRes = await client.query(checkQuery, [player.nickname]);
+      if (checkRes.rows.length === 0) { // Если запись не найдена
+         const insertQuery = 
+            INSERT INTO players (nickname, email, registered, status) 
+            VALUES ($1, $2, $3, $4);
+         await client.query(insertQuery, [player.nickname, player.email, player.registered, player.status]);
+         console.log('Запись для игрока ${player.nickname} добавлена.');
+      } else {
+         console.log('Игрок ${player.nickname} уже существует. Пропуск.');
+      }
+   } catch (error) {
+      console.error("Ошибка при добавлении данных:", error);
+   }
+   - Если игрока с таким ником нет (checkRes.rows.length === 0), выполняется запрос на добавление нового игрока в таблицу.
+   - Если игрок с таким ником уже существует, выводится сообщение о том, что он пропускается.
+
+9. **Сообщение об успешном завершении импорта**:javascript
+   console.log("Импорт данных завершен.");
+   await selectPlayersWithStatusOn();
+   await client.end(); // Закрываем подключение
+   
+   После завершения добавления всех игроков выводится сообщение об успешном завершении импорта, затем вызывается 
+   функция для отображения игроков со статусом "On",
+    и закрывается подключение к базе данных.
+
+подведем общий итог функции 
+Функция importDataFromCSV считывает данные из CSV-файла, преобразует их, 
+проверяет наличие дублирующих записей в
+ базе данных и добавляет только новые записи. Она также обрабатывает ошибки и выводит сообщения о ходе выполнения.
+ 
+
+
+ 1. Определение функции:
+   
+
+   async function selectPlayersWithStatusOn() {
+   
+   Это объявление функции, которая называется selectPlayersWithStatusOn. Она будет использоваться для выбора игроков со статусом "On" из базы данных.
+
+2. SQL-запрос:
+   
+
+   const selectQuery = 
+   SELECT * FROM players 
+   WHERE status = 'On' 
+   ORDER BY registered;
+   
+   Здесь мы создаем строку с SQL-запросом. Этот запрос:
+   - SELECT *: выбирает все столбцы (*) из таблицы players.
+   - WHERE status = 'On': фильтрует результаты, чтобы показать только тех игроков, у которых статус равен "On".
+   - ORDER BY registered: сортирует результаты по столбцу registered (дате регистрации).
+
+3. Выполнение запроса:
+   
+
+   try {
+     const res = await client.query(selectQuery);
+   
+   Мы используем try для обработки возможных ошибок. Внутри блока try выполняется SQL-запрос с помощью client.query(selectQuery), и результаты запроса сохраняются в переменной res.
+
+4. Вывод результатов:
+   
+
+   console.log("Игроки со статусом 'On':");
+   console.table(res.rows); // Выводим результаты в виде таблицы
+   
+   После успешного выполнения запроса выводится сообщение в консоль, а затем результаты отображаются в виде таблицы с помощью console.table(res.rows).
+
+5. Обработка ошибок:
+   
+
+   } catch (error) {
+     console.error("Ошибка при выборе данных:", error);
+   }
+   
+   Если возникла ошибка во время выполнения запроса, она будет поймана и выведена в консоль с сообщением об ошибке.
+
+
+1. Определение функции:
+   
+
+   async function main() {
+   
+   Это объявление основной функции, которая будет запускаться, когда вы хотите создать таблицу и импортировать данные.
+
+2. Создание таблицы и импорт данных:
+   
+
+   try {
+     await createTable();
+     await importDataFromCSV('players.csv'); // Убедитесь, что файл players.csv находится в той же директории
+   
+   - try используется для обработки ошибок.
+   - await createTable(): вызывает функцию createTable, которая создает таблицу в базе данных.
+   - await importDataFromCSV('players.csv'): затем вызывает функцию importDataFromCSV, которая импортирует данные из файла players.csv.
+
+3. Обработка ошибок:
+   
+
+   } catch (err) {
+     console.error(err);
+   }
+   
+   Если возникла ошибка на любом из шагов (создание таблицы или импорт данных), она будет поймана и выведена в консоль.
+
+
+- Функция selectPlayersWithStatusOn выбирает и отображает игроков со статусом "On" из базы данных.
+- Функция main отвечает за создание таблицы и импорт данных из CSV-файла, обрабатывая любые ошибки, которые могут возникнуть в процессе. 
